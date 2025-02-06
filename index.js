@@ -46,7 +46,7 @@ const userSteps = {};
 
 const mainMenu = {
   reply_markup: {
-    keyboard: [
+    inline_keyboard: [
       [{ text: "📜 Правила", callback_data: "rules" }, { text: "💰 Цены", callback_data: "prices" }],
       [{ text: "🛒 Оформить заказ", callback_data: "order" }],
     ],
