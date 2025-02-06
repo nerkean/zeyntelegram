@@ -47,8 +47,8 @@ const userSteps = {};
 const mainMenu = {
   reply_markup: {
     keyboard: [
-      [{ text: "📜 Правила" }, { text: "💰 Цены" }],
-      [{ text: "🛒 Оформить заказ" }],
+      [{ text: "📜 Правила", callback_data: "rules" }, { text: "💰 Цены", callback_data: "prices" }],
+      [{ text: "🛒 Оформить заказ", callback_data: "order" }],
     ],
     resize_keyboard: true,
     one_time_keyboard: false,
@@ -60,136 +60,142 @@ const pricesText = "Здесь текст с ценами.";
 
 
 tgBot.on("message", async (msg) => {
-    const chatId = msg.chat.id;
-    const text = msg.text;
+  const chatId = msg.chat.id;
+  const text = msg.text;
 
-    // Обработка отзыва (если пользователь в режиме ожидания отзыва)
-    if (userSteps[chatId] && userSteps[chatId].step === "awaiting_review") {
-        const orderId = userSteps[chatId].orderId;
-        const review = text;
+  // Обработка отзыва (если пользователь в режиме ожидания отзыва)
+  if (userSteps[chatId] && userSteps[chatId].step === "awaiting_review") {
+      const orderId = userSteps[chatId].orderId;
+      const review = text;
 
-        try {
-            const order = await Order.findOne({ orderId: orderId });
-            if (!order) {
-                return tgBot.sendMessage(chatId, "❌ Заказ не найден.");
-            }
+      try {
+          const order = await Order.findOne({ orderId: orderId });
+          if (!order) {
+              return tgBot.sendMessage(chatId, "❌ Заказ не найден.");
+          }
 
-            if (chatId.toString() !== order.customerId) {
-                return tgBot.sendMessage(
-                    chatId,
-                    "❌ Вы не можете оставить отзыв к этому заказу, так как не являетесь его заказчиком."
-                );
-            }
+          if (chatId.toString() !== order.customerId) {
+              return tgBot.sendMessage(
+                  chatId,
+                  "❌ Вы не можете оставить отзыв к этому заказу, так как не являетесь его заказчиком."
+              );
+          }
 
-            let boosterRating = await BoosterRating.findOne({
-                boosterId: order.boosterId,
-            });
-            if (boosterRating && boosterRating.comments.some(comment => comment.orderId === orderId && comment.userId === order.customerId)) {
-                return tgBot.sendMessage(
-                    chatId,
-                    "❌ Вы уже оставляли отзыв к этому заказу."
-                );
-            }
+          let boosterRating = await BoosterRating.findOne({
+              boosterId: order.boosterId,
+          });
+          if (boosterRating && boosterRating.comments.some(comment => comment.orderId === orderId && comment.userId === order.customerId)) {
+              return tgBot.sendMessage(
+                  chatId,
+                  "❌ Вы уже оставляли отзыв к этому заказу."
+              );
+          }
 
-            order.review = review;
-            await order.save();
+          order.review = review;
+          await order.save();
 
-            if (!boosterRating) {
-                boosterRating = new BoosterRating({
-                    boosterId: order.boosterId,
-                    ratings: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
-                    totalRatings: 0,
-                    averageRating: 0,
-                    ratedBy: [],
-                    comments: [],
-                });
-            }
+          if (!boosterRating) {
+              boosterRating = new BoosterRating({
+                  boosterId: order.boosterId,
+                  ratings: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+                  totalRatings: 0,
+                  averageRating: 0,
+                  ratedBy: [],
+                  comments: [],
+              });
+          }
 
-            boosterRating.comments.push({
-                userId: order.customerId,
-                orderId: orderId,
-                comment: review,
-                source: 'telegram'
-            });
+          boosterRating.comments.push({
+              userId: order.customerId,
+              orderId: orderId,
+              comment: review,
+              source: 'telegram'
+          });
 
-            await boosterRating.save();
+          await boosterRating.save();
 
-            await createNotification("reviewed", orderId, null, review); // Если используешь уведомления
+          await createNotification("reviewed", orderId, null, review); // Если используешь уведомления
 
-            tgBot.sendMessage(chatId, `✅ Спасибо за ваш отзыв! Он был сохранен.`);
-        } catch (error) {
-            console.error("Ошибка при сохранении отзыва:", error);
-            tgBot.sendMessage(
-                chatId,
-                "❌ Произошла ошибка при сохранении отзыва."
-            );
-        } finally {
-            delete userSteps[chatId];
-        }
+          tgBot.sendMessage(chatId, `✅ Спасибо за ваш отзыв! Он был сохранен.`);
+      } catch (error) {
+          console.error("Ошибка при сохранении отзыва:", error);
+          tgBot.sendMessage(
+              chatId,
+              "❌ Произошла ошибка при сохранении отзыва."
+          );
+      } finally {
+          delete userSteps[chatId];
+      }
 
-        return; // Прерываем, чтобы не обрабатывать как обычное сообщение
-    }
+      return; // Прерываем, чтобы не обрабатывать как обычное сообщение
+  }
 
 
-    // Команды
-    if (text === "/start") {
-        return tgBot.sendMessage(chatId, "Здравствуйте!  Используйте /rules, /prices и /order.");
-    } else if (text === "/rules") {
-        return tgBot.sendMessage(chatId, rulesText);
-    } else if (text === "/prices") {
-        return tgBot.sendMessage(chatId, pricesText);
-    } else if (text === "/order") {
-        tgBot.sendMessage(chatId, "Давайте оформим заказ. Введите имя:");
-        userSteps[chatId] = { step: 1, data: {} };
-        return;
-    }
+  // Команды
+  if (text === "/start") {
+      return tgBot.sendMessage(chatId, "Здравствуйте!  Используйте /rules, /prices и /order.");
+  } else if (text === "/rules") {
+      return tgBot.sendMessage(chatId, rulesText);
+  } else if (text === "/prices") {
+      return tgBot.sendMessage(chatId, pricesText);
+  } else if (text === "/order") {
+      tgBot.sendMessage(chatId, "Давайте оформим заказ. Введите имя:");
+      userSteps[chatId] = { step: 1, data: {} };
+      return;
+  }
 
-    // Обработка шагов оформления заказа
-    if (!userSteps[chatId]) return;  // Если пользователь не в процессе оформления, игнорируем
+  // Обработка шагов оформления заказа
+  if (!userSteps[chatId]) return;  // Если пользователь не в процессе оформления, игнорируем
 
-    switch (userSteps[chatId].step) {
-        case 1:
-            userSteps[chatId].data.name = text;
-            tgBot.sendMessage(chatId, "Теперь введи описание:");
-            userSteps[chatId].step = 2;
-            break;
-        case 2:
-            userSteps[chatId].data.description = text;
-            const orderId = generateShortId();
-            const newOrder = new Order({
-                orderId,
-                name: userSteps[chatId].data.name,
-                description: userSteps[chatId].data.description,
-                customerId: chatId.toString(),
-                customerAvatarURL: `https://api.telegram.org/bot${TELEGRAM_TOKEN}/getUserProfilePhotos?user_id=${msg.from.id}`,
-                customerName: msg.from.username, // Сохраняем username
-                source: 'telegram'
-            });
+  switch (userSteps[chatId].step) {
+      case 1:
+          userSteps[chatId].data.name = text;
+          tgBot.sendMessage(chatId, "Теперь введи описание:");
+          userSteps[chatId].step = 2;
+          break;
+      case 2:
+          userSteps[chatId].data.description = text;
+          const orderId = generateShortId();
+          const newOrder = new Order({
+              orderId,
+              name: userSteps[chatId].data.name,
+              description: userSteps[chatId].data.description,
+              customerId: chatId.toString(),
+              customerAvatarURL: `https://api.telegram.org/bot${TELEGRAM_TOKEN}/getUserProfilePhotos?user_id=${msg.from.id}`,
+              customerName: msg.from.username, // Сохраняем username
+              source: 'telegram'
+          });
 
-            try {
-                await newOrder.save();
-                tgBot.sendMessage(chatId, `✅ Заказ создан! ID: ${orderId}`);
-                sendToDiscord(newOrder);
-            } catch (error) {
-                console.error("Ошибка при создании заказа:", error);
-                tgBot.sendMessage(
-                    chatId,
-                    "❌ Произошла ошибка при создании заказа. Пожалуйста, попробуйте позже."
-                );
-            }
+          try {
+              await newOrder.save();
+              tgBot.sendMessage(chatId, `✅ Заказ создан! ID: ${orderId}`);
+              sendToDiscord(newOrder);
+          } catch (error) {
+              console.error("Ошибка при создании заказа:", error);
+              tgBot.sendMessage(
+                  chatId,
+                  "❌ Произошла ошибка при создании заказа. Пожалуйста, попробуйте позже."
+              );
+          }
 
-            delete userSteps[chatId];
-            break;
-    }
+          delete userSteps[chatId];
+          break;
+  }
 });
 
 tgBot.on("callback_query", async (query) => {
-    const chatId = query.message.chat.id;
-    const messageId = query.message.message_id;
-    const data = query.data;
-    const userId = query.from.id;
-  
-   if (data.startsWith("confirm_order_")) {
+  const chatId = query.message.chat.id;
+  const messageId = query.message.message_id; // ID сообщения, чтобы потом его редактировать (если нужно)
+  const data = query.data; // Получаем данные из callback_data
+
+  if (data === "rules") {
+    tgBot.sendMessage(chatId, rulesText);
+  } else if (data === "prices") {
+    tgBot.sendMessage(chatId, pricesText);
+  } else if (data === "order") {
+    tgBot.sendMessage(chatId, "Давайте оформим заказ. Введите имя:");
+    userSteps[chatId] = { step: 1, data: {} };
+  } else if (data.startsWith("confirm_order_")) {
       const orderId = data.split("_")[2];
       await handleConfirmOrder(chatId, messageId, orderId);
     } else if (data.startsWith("cancel_order_")) {
@@ -206,7 +212,7 @@ tgBot.on("callback_query", async (query) => {
       };
       tgBot.sendMessage(chatId, "Пожалуйста, введите ваш отзыв:");
     }
-  });
+});
   
 
 async function handleTakeOrder(userId, chatId, orderId) {
